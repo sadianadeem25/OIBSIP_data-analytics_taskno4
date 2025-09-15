@@ -1,0 +1,174 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from textblob import TextBlob
+from wordcloud import WordCloud
+
+# Load the dataset
+df = pd.read_csv('/content/apps.csv')
+
+# Basic data exploration
+print("First 5 rows:")
+print(df.head())
+print("\nData info:")
+print(df.info())
+print("\nDescriptive statistics:")
+print(df.describe())
+
+# Check for missing values
+print("\nMissing values:")
+print(df.isnull().sum())
+
+# Data Cleaning
+
+# 1. Handle missing ratings
+print("\nFilling missing ratings with median...")
+df['Rating'].fillna(df['Rating'].median(), inplace=True)
+
+# 2. Convert Reviews to numeric
+print("\nConverting Reviews to numeric...")
+# First ensure all values are strings
+df['Reviews'] = df['Reviews'].astype(str)
+# Then clean and convert
+df['Reviews'] = df['Reviews'].str.replace('+', '').str.replace(',', '').astype(int)
+
+# 3. Convert Installs to numeric
+print("\nConverting Installs to numeric...")
+df['Installs'] = df['Installs'].astype(str)
+df['Installs'] = df['Installs'].str.replace('+', '').str.replace(',', '').astype(int)
+
+# 4. Convert Size to numeric (MB)
+print("\nConverting Size to numeric...")
+def convert_size(size):
+    if isinstance(size, str):
+        if 'M' in size:
+            return float(size.replace('M', ''))
+        elif 'k' in size:
+            return float(size.replace('k', '')) / 1024
+        elif 'Varies with device' in size:
+            return np.nan
+    return np.nan  # for other cases
+
+df['Size'] = df['Size'].apply(convert_size)
+df['Size'].fillna(df['Size'].median(), inplace=True)  # Fill missing sizes with median
+
+# 5. Convert Price to numeric
+print("\nConverting Price to numeric...")
+df['Price'] = df['Price'].astype(str)
+df['Price'] = df['Price'].str.replace('$', '').astype(float)
+
+# 6. Convert Last Updated to datetime
+print("\nConverting Last Updated to datetime...")
+df['Last Updated'] = pd.to_datetime(df['Last Updated'])
+
+# Sentiment Analysis
+print("\nPerforming sentiment analysis...")
+def analyze_sentiment(text):
+    if pd.isnull(text):
+        return 0  # Neutral for missing values
+    analysis = TextBlob(str(text))
+    return analysis.sentiment.polarity
+
+df['Sentiment'] = df['App'].apply(analyze_sentiment)
+
+def classify_sentiment(score):
+    if score > 0.1:
+        return 'Positive'
+    elif score < -0.1:
+        return 'Negative'
+    else:
+        return 'Neutral'
+
+df['Sentiment_Label'] = df['Sentiment'].apply(classify_sentiment)
+
+# Visualization
+print("\nCreating visualizations...")
+
+# 1. Sentiment distribution
+plt.figure(figsize=(10, 6))
+sns.countplot(data=df, x='Sentiment_Label', order=['Positive', 'Neutral', 'Negative'])
+plt.title('Distribution of Sentiment Labels')
+plt.xlabel('Sentiment')
+plt.ylabel('Count')
+plt.savefig('sentiment_distribution.png')
+plt.show()
+
+# 2. Sentiment vs Rating
+plt.figure(figsize=(10, 6))
+sns.boxplot(data=df, x='Sentiment_Label', y='Rating', order=['Positive', 'Neutral', 'Negative'])
+plt.title('Sentiment vs App Rating')
+plt.xlabel('Sentiment')
+plt.ylabel('Rating')
+plt.savefig('sentiment_vs_rating.png')
+plt.show()
+
+# 3. Word cloud for positive sentiment apps
+positive_apps = df[df['Sentiment_Label'] == 'Positive']['App'].dropna()
+if len(positive_apps) > 0:
+    wordcloud = WordCloud(width=800, height=400, background_color='white').generate(' '.join(positive_apps))
+    plt.figure(figsize=(12, 6))
+    plt.imshow(wordcloud, interpolation='bilinear')
+    plt.axis('off')
+    plt.title('Word Cloud for Positive Sentiment Apps')
+    plt.savefig('wordcloud_positive.png')
+    plt.show()
+else:
+    print("No positive sentiment apps found for word cloud.")
+
+# 4. Sentiment by Category (Top 15)
+plt.figure(figsize=(12, 8))
+top_categories = df['Category'].value_counts().index[:15]
+sns.countplot(data=df[df['Category'].isin(top_categories)],
+              y='Category', hue='Sentiment_Label',
+              hue_order=['Positive', 'Neutral', 'Negative'])
+plt.title('Sentiment Distribution by App Category (Top 15)')
+plt.xlabel('Count')
+plt.ylabel('Category')
+plt.legend(title='Sentiment')
+plt.tight_layout()
+plt.savefig('sentiment_by_category.png')
+plt.show()
+
+# Correlation Analysis
+print("\nCalculating correlations...")
+corr_matrix = df[['Sentiment', 'Rating', 'Reviews', 'Installs', 'Price']].corr()
+plt.figure(figsize=(10, 8))
+sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0)
+plt.title('Correlation Matrix')
+plt.savefig('correlation_matrix.png')
+plt.show()
+
+# Advanced Analysis
+print("\nPerforming advanced analysis...")
+
+# 1. Sentiment by content rating
+plt.figure(figsize=(12, 6))
+sns.boxplot(data=df, x='Content Rating', y='Sentiment')
+plt.title('Sentiment Analysis by Content Rating')
+plt.xticks(rotation=45)
+plt.savefig('sentiment_by_content_rating.png')
+plt.show()
+
+# 2. Top positive and negative apps
+top_positive = df.sort_values('Sentiment', ascending=False).head(10)[['App', 'Category', 'Sentiment']]
+top_negative = df.sort_values('Sentiment').head(10)[['App', 'Category', 'Sentiment']]
+
+print("\nTop 10 Positive Sentiment Apps:")
+print(top_positive)
+print("\nTop 10 Negative Sentiment Apps:")
+print(top_negative)
+
+# 3. Sentiment over time (by last updated year)
+df['Year'] = df['Last Updated'].dt.year
+sentiment_over_time = df.groupby('Year')['Sentiment'].mean()
+plt.figure(figsize=(10, 6))
+sentiment_over_time.plot()
+plt.title('Average Sentiment Over Time')
+plt.xlabel('Year')
+plt.ylabel('Average Sentiment Score')
+plt.grid()
+plt.savefig('sentiment_over_time.png')
+plt.show()
+
+print("\nAnalysis completed successfully!")
